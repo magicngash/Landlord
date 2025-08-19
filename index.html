@@ -1,0 +1,606 @@
+import React, { useState, useEffect } from 'react';
+
+// Mock data and API simulation
+const mockTenants = [
+  {
+    id: 1,
+    name: "John Kamau",
+    unit: "A01",
+    phone: "254712345678",
+    monthlyRent: 15000,
+    balance: 0,
+    payments: [
+      { id: 1, amount: 15000, date: "2024-07-01", status: "paid", method: "M-Pesa" },
+      { id: 2, amount: 15000, date: "2024-08-01", status: "paid", method: "M-Pesa" }
+    ]
+  },
+  {
+    id: 2,
+    name: "Mary Wanjiku",
+    unit: "B02",
+    phone: "254798765432",
+    monthlyRent: 12000,
+    balance: 12000,
+    payments: [
+      { id: 3, amount: 12000, date: "2024-07-01", status: "paid", method: "M-Pesa" }
+    ]
+  },
+  {
+    id: 3,
+    name: "Peter Ochieng",
+    unit: "C03",
+    phone: "254723456789",
+    monthlyRent: 18000,
+    balance: 36000,
+    payments: []
+  }
+];
+
+// Simulated M-Pesa STK Push API
+const initiateSTKPush = async (phoneNumber, amount, accountReference) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({
+        success: true,
+        checkoutRequestID: `ws_CO_${Date.now()}`,
+        responseDescription: "Success. Request accepted for processing",
+        customerMessage: "Success. Request accepted for processing"
+      });
+    }, 2000);
+  });
+};
+
+// Simulated Excel update API
+const updateExcelSheet = async (paymentData) => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      console.log('Excel sheet updated with:', paymentData);
+      resolve({ success: true });
+    }, 1000);
+  });
+};
+
+const App = () => {
+  const [currentPage, setCurrentPage] = useState('home');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [userRole, setUserRole] = useState('tenant'); // tenant or landlord
+  const [currentUser, setCurrentUser] = useState(mockTenants[0]);
+  const [tenants, setTenants] = useState(mockTenants);
+  const [loading, setLoading] = useState(false);
+
+  // Homepage Component
+  const HomePage = () => {
+    const today = new Date();
+    const currentMonth = today.getMonth();
+    const currentYear = today.getFullYear();
+    
+    // Calculate rent due date (assuming rent is due on the 1st of each month)
+    const nextRentDate = new Date(currentYear, currentMonth + 1, 1);
+    const daysUntilRent = Math.ceil((nextRentDate - today) / (1000 * 60 * 60 * 24));
+    
+    // Determine rent status
+    const getRentStatus = () => {
+      if (currentUser.balance === 0) {
+        return {
+          status: 'paid',
+          message: 'Fully Paid',
+          description: 'Your rent is up to date',
+          color: 'text-green-600',
+          bgColor: 'bg-green-50',
+          borderColor: 'border-green-200'
+        };
+      } else if (daysUntilRent > 0) {
+        return {
+          status: 'upcoming',
+          message: `Due in ${daysUntilRent} days`,
+          description: `Rent of KSh ${currentUser.balance.toLocaleString()} is due on ${nextRentDate.toDateString()}`,
+          color: 'text-orange-600',
+          bgColor: 'bg-orange-50',
+          borderColor: 'border-orange-200'
+        };
+      } else {
+        const daysOverdue = Math.abs(daysUntilRent);
+        return {
+          status: 'overdue',
+          message: daysOverdue === 0 ? 'Due Today' : `${daysOverdue} days overdue`,
+          description: `Outstanding balance: KSh ${currentUser.balance.toLocaleString()}`,
+          color: 'text-red-600',
+          bgColor: 'bg-red-50',
+          borderColor: 'border-red-200'
+        };
+      }
+    };
+
+    const rentStatus = getRentStatus();
+
+    return (
+      <div className="p-6">
+        {/* Welcome Header */}
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">Welcome back, {currentUser.name}!</h1>
+          <p className="text-gray-600">Here's your rental overview</p>
+        </div>
+
+        {/* Property Information Card */}
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Property Details</h2>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Apartment</span>
+              <span className="font-medium text-gray-800">Greenview Heights</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Unit Number</span>
+              <span className="font-medium text-gray-800">{currentUser.unit}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Tenant</span>
+              <span className="font-medium text-gray-800">{currentUser.name}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-600">Monthly Rent</span>
+              <span className="font-medium text-gray-800">KSh {currentUser.monthlyRent.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Rent Status Card */}
+        <div className={`rounded-lg border p-6 mb-6 ${rentStatus.bgColor} ${rentStatus.borderColor}`}>
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800">Rent Status</h3>
+              <p className={`text-sm ${rentStatus.color}`}>{rentStatus.description}</p>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-sm font-medium ${rentStatus.color} ${rentStatus.bgColor} border ${rentStatus.borderColor}`}>
+              {rentStatus.message}
+            </span>
+          </div>
+          
+          {currentUser.balance > 0 && (
+            <div className="mt-4">
+              <button
+                onClick={() => setCurrentPage('payment')}
+                className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-700"
+              >
+                Pay Now
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Quick Actions */}
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-gray-800">Quick Actions</h3>
+          
+          <div className="grid grid-cols-1 gap-4">
+            <button
+              onClick={() => setCurrentPage('payment')}
+              className="bg-white border rounded-lg p-4 text-left hover:bg-gray-50 transition-colors"
+            >
+              <h4 className="font-medium text-gray-800 mb-1">Make Payment</h4>
+              <p className="text-sm text-gray-600">Pay your rent via M-Pesa</p>
+            </button>
+            
+            <button
+              onClick={() => setCurrentPage('history')}
+              className="bg-white border rounded-lg p-4 text-left hover:bg-gray-50 transition-colors"
+            >
+              <h4 className="font-medium text-gray-800 mb-1">Payment History</h4>
+              <p className="text-sm text-gray-600">View your payment records and receipts</p>
+            </button>
+          </div>
+        </div>
+
+        {/* Recent Payments Preview */}
+        {currentUser.payments.length > 0 && (
+          <div className="mt-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">Recent Payments</h3>
+              <button
+                onClick={() => setCurrentPage('history')}
+                className="text-blue-600 text-sm font-medium hover:text-blue-700"
+              >
+                View All
+              </button>
+            </div>
+            
+            <div className="bg-white border rounded-lg divide-y divide-gray-200">
+              {currentUser.payments.slice(-3).reverse().map((payment) => (
+                <div key={payment.id} className="p-4 flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-gray-800">KSh {payment.amount.toLocaleString()}</p>
+                    <p className="text-sm text-gray-600">{payment.date}</p>
+                  </div>
+                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
+                    {payment.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Payment Page Component
+  const PaymentPage = () => {
+    const [amount, setAmount] = useState(currentUser.balance || currentUser.monthlyRent);
+    const [phoneNumber, setPhoneNumber] = useState(currentUser.phone);
+    const [paymentStatus, setPaymentStatus] = useState('');
+
+    const handlePayment = async () => {
+      setLoading(true);
+      setPaymentStatus('processing');
+      
+      try {
+        // Initiate STK Push
+        const stkResponse = await initiateSTKPush(phoneNumber, amount, `RENT_${currentUser.unit}`);
+        
+        if (stkResponse.success) {
+          // Simulate successful payment after STK Push
+          setTimeout(async () => {
+            const newPayment = {
+              id: Date.now(),
+              amount: amount,
+              date: new Date().toISOString().split('T')[0],
+              status: 'paid',
+              method: 'M-Pesa',
+              transactionId: `TXN${Date.now()}`
+            };
+
+            // Update tenant data
+            const updatedUser = {
+              ...currentUser,
+              balance: Math.max(0, currentUser.balance - amount),
+              payments: [...currentUser.payments, newPayment]
+            };
+
+            setCurrentUser(updatedUser);
+            
+            // Update tenants array
+            setTenants(prev => prev.map(t => t.id === currentUser.id ? updatedUser : t));
+
+            // Update Excel sheet
+            await updateExcelSheet({
+              tenant: currentUser.name,
+              unit: currentUser.unit,
+              amount: amount,
+              date: newPayment.date,
+              transactionId: newPayment.transactionId
+            });
+
+            setPaymentStatus('success');
+            setLoading(false);
+          }, 3000);
+        }
+      } catch (error) {
+        setPaymentStatus('error');
+        setLoading(false);
+      }
+    };
+
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-6 text-gray-800">Pay Rent</h1>
+        
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-700">Tenant Details</h2>
+            <p className="text-gray-600">Name: {currentUser.name}</p>
+            <p className="text-gray-600">Unit: {currentUser.unit}</p>
+            <p className="text-gray-600">Monthly Rent: KSh {currentUser.monthlyRent.toLocaleString()}</p>
+            <p className="text-red-600 font-semibold">Outstanding Balance: KSh {currentUser.balance.toLocaleString()}</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border p-6">
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Phone Number
+            </label>
+            <input
+              type="tel"
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              placeholder="254712345678"
+            />
+          </div>
+
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Amount (KSh)
+            </label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(Number(e.target.value))}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              min="0"
+            />
+          </div>
+
+          {paymentStatus === 'processing' && (
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800">Processing payment... Please complete the transaction on your phone.</p>
+            </div>
+          )}
+
+          {paymentStatus === 'success' && (
+            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-green-800">Payment successful! Your balance has been updated.</p>
+            </div>
+          )}
+
+          {paymentStatus === 'error' && (
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-red-800">Payment failed. Please try again.</p>
+            </div>
+          )}
+
+          <button
+            onClick={handlePayment}
+            disabled={loading}
+            className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Processing...' : 'Pay via M-Pesa'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // Tenant History Page Component
+  const TenantHistoryPage = () => {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-6 text-gray-800">Payment History</h1>
+        
+        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <h3 className="text-sm font-medium text-gray-500">Current Balance</h3>
+              <p className="text-2xl font-bold text-red-600">KSh {currentUser.balance.toLocaleString()}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-gray-500">Monthly Rent</h3>
+              <p className="text-2xl font-bold text-gray-800">KSh {currentUser.monthlyRent.toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="p-6 border-b">
+            <h2 className="text-lg font-semibold text-gray-700">Payment History</h2>
+          </div>
+          
+          <div className="divide-y divide-gray-200">
+            {currentUser.payments.length === 0 ? (
+              <div className="p-6 text-center text-gray-500">
+                No payments recorded yet.
+              </div>
+            ) : (
+              currentUser.payments.map((payment) => (
+                <div key={payment.id} className="p-6 hover:bg-gray-50">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium text-gray-800">KSh {payment.amount.toLocaleString()}</p>
+                      <p className="text-sm text-gray-600">{payment.date}</p>
+                      <p className="text-sm text-gray-500">{payment.method}</p>
+                    </div>
+                    <span className="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
+                      {payment.status}
+                    </span>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Landlord Information Page Component
+  const LandlordInfoPage = () => {
+    const totalRent = tenants.reduce((sum, tenant) => sum + tenant.monthlyRent, 0);
+    const totalOutstanding = tenants.reduce((sum, tenant) => sum + tenant.balance, 0);
+    const overdueTenants = tenants.filter(tenant => tenant.balance > 0);
+
+    const generateReport = () => {
+      const reportData = {
+        totalTenants: tenants.length,
+        totalMonthlyRent: totalRent,
+        totalOutstanding: totalOutstanding,
+        collectionRate: ((totalRent - totalOutstanding) / totalRent * 100).toFixed(1),
+        tenants: tenants.map(tenant => ({
+          name: tenant.name,
+          unit: tenant.unit,
+          monthlyRent: tenant.monthlyRent,
+          balance: tenant.balance,
+          lastPayment: tenant.payments[tenant.payments.length - 1]?.date || 'Never'
+        }))
+      };
+      
+      console.log('Generated Report:', reportData);
+      alert('Report generated! Check console for details.');
+    };
+
+    return (
+      <div className="p-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-800">Landlord Dashboard</h1>
+          <button
+            onClick={generateReport}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700"
+          >
+            Generate Report
+          </button>
+        </div>
+
+        {/* Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h3 className="text-sm font-medium text-gray-500 mb-2">Total Monthly Rent</h3>
+            <p className="text-2xl font-bold text-green-600">KSh {totalRent.toLocaleString()}</p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h3 className="text-sm font-medium text-gray-500 mb-2">Outstanding Balance</h3>
+            <p className="text-2xl font-bold text-red-600">KSh {totalOutstanding.toLocaleString()}</p>
+          </div>
+          
+          <div className="bg-white rounded-lg shadow-sm border p-6">
+            <h3 className="text-sm font-medium text-gray-500 mb-2">Collection Rate</h3>
+            <p className="text-2xl font-bold text-blue-600">
+              {((totalRent - totalOutstanding) / totalRent * 100).toFixed(1)}%
+            </p>
+          </div>
+        </div>
+
+        {/* Overdue Payments Alert */}
+        {overdueTenants.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
+            <h3 className="font-medium text-red-800 mb-2">Overdue Payments ({overdueTenants.length})</h3>
+            <div className="space-y-1">
+              {overdueTenants.map(tenant => (
+                <p key={tenant.id} className="text-sm text-red-700">
+                  {tenant.name} (Unit {tenant.unit}) - KSh {tenant.balance.toLocaleString()}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tenants List */}
+        <div className="bg-white rounded-lg shadow-sm border">
+          <div className="p-6 border-b">
+            <h2 className="text-lg font-semibold text-gray-700">All Tenants</h2>
+          </div>
+          
+          <div className="divide-y divide-gray-200">
+            {tenants.map((tenant) => (
+              <div key={tenant.id} className="p-6 hover:bg-gray-50">
+                <div className="flex justify-between items-start">
+                  <div className="flex-1">
+                    <h3 className="font-medium text-gray-800">{tenant.name}</h3>
+                    <p className="text-sm text-gray-600">Unit {tenant.unit}</p>
+                    <p className="text-sm text-gray-600">Monthly Rent: KSh {tenant.monthlyRent.toLocaleString()}</p>
+                    <p className="text-sm text-gray-600">
+                      Last Payment: {tenant.payments[tenant.payments.length - 1]?.date || 'Never'}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-medium ${tenant.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      {tenant.balance > 0 ? `KSh ${tenant.balance.toLocaleString()} due` : 'Paid up'}
+                    </p>
+                    <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+                      tenant.balance === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                    }`}>
+                      {tenant.balance === 0 ? 'Current' : 'Overdue'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Navigation Component
+  const Navigation = () => (
+    <nav className="bg-white shadow-sm border-b">
+      <div className="flex items-center justify-between p-4">
+        <h1 className="text-xl font-bold text-gray-800">RentPay Kenya</h1>
+        
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          className="p-2 hover:bg-gray-100 rounded-lg"
+        >
+          <div className="w-6 h-6 flex flex-col justify-center space-y-1">
+            <div className="w-6 h-0.5 bg-gray-600"></div>
+            <div className="w-6 h-0.5 bg-gray-600"></div>
+            <div className="w-6 h-0.5 bg-gray-600"></div>
+          </div>
+        </button>
+      </div>
+      
+      {menuOpen && (
+        <div className="border-t bg-white">
+          <div className="p-2 space-y-1">
+            <div className="px-3 py-2 text-sm font-medium text-gray-500">Role</div>
+            <button
+              onClick={() => {
+                setUserRole(userRole === 'tenant' ? 'landlord' : 'tenant');
+                setCurrentPage(userRole === 'tenant' ? 'landlord' : 'home');
+                setMenuOpen(false);
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
+            >
+              Switch to {userRole === 'tenant' ? 'Landlord' : 'Tenant'} View
+            </button>
+            
+            <div className="border-t pt-2 mt-2">
+              {userRole === 'tenant' ? (
+                <>
+                  <button
+                    onClick={() => { setCurrentPage('home'); setMenuOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
+                      currentPage === 'home' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    Home
+                  </button>
+                  <button
+                    onClick={() => { setCurrentPage('payment'); setMenuOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
+                      currentPage === 'payment' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    Pay Rent
+                  </button>
+                  <button
+                    onClick={() => { setCurrentPage('history'); setMenuOpen(false); }}
+                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
+                      currentPage === 'history' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
+                    }`}
+                  >
+                    Payment History
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => { setCurrentPage('landlord'); setMenuOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
+                    currentPage === 'landlord' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                  }`}
+                >
+                  Dashboard
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </nav>
+  );
+
+  // Main App Render
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Navigation />
+      
+      <main className="pb-16">
+        {currentPage === 'home' && <HomePage />}
+        {currentPage === 'payment' && <PaymentPage />}
+        {currentPage === 'history' && <TenantHistoryPage />}
+        {currentPage === 'landlord' && <LandlordInfoPage />}
+      </main>
+    </div>
+  );
+};
+
+export default App;

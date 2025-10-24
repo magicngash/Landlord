@@ -1,606 +1,1357 @@
-import React, { useState, useEffect } from 'react';
-
-// Mock data and API simulation
-const mockTenants = [
-  {
-    id: 1,
-    name: "John Kamau",
-    unit: "A01",
-    phone: "254712345678",
-    monthlyRent: 15000,
-    balance: 0,
-    payments: [
-      { id: 1, amount: 15000, date: "2024-07-01", status: "paid", method: "M-Pesa" },
-      { id: 2, amount: 15000, date: "2024-08-01", status: "paid", method: "M-Pesa" }
-    ]
-  },
-  {
-    id: 2,
-    name: "Mary Wanjiku",
-    unit: "B02",
-    phone: "254798765432",
-    monthlyRent: 12000,
-    balance: 12000,
-    payments: [
-      { id: 3, amount: 12000, date: "2024-07-01", status: "paid", method: "M-Pesa" }
-    ]
-  },
-  {
-    id: 3,
-    name: "Peter Ochieng",
-    unit: "C03",
-    phone: "254723456789",
-    monthlyRent: 18000,
-    balance: 36000,
-    payments: []
-  }
-];
-
-// Simulated M-Pesa STK Push API
-const initiateSTKPush = async (phoneNumber, amount, accountReference) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        success: true,
-        checkoutRequestID: `ws_CO_${Date.now()}`,
-        responseDescription: "Success. Request accepted for processing",
-        customerMessage: "Success. Request accepted for processing"
-      });
-    }, 2000);
-  });
-};
-
-// Simulated Excel update API
-const updateExcelSheet = async (paymentData) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      console.log('Excel sheet updated with:', paymentData);
-      resolve({ success: true });
-    }, 1000);
-  });
-};
-
-const App = () => {
-  const [currentPage, setCurrentPage] = useState('home');
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [userRole, setUserRole] = useState('tenant'); // tenant or landlord
-  const [currentUser, setCurrentUser] = useState(mockTenants[0]);
-  const [tenants, setTenants] = useState(mockTenants);
-  const [loading, setLoading] = useState(false);
-
-  // Homepage Component
-  const HomePage = () => {
-    const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    
-    // Calculate rent due date (assuming rent is due on the 1st of each month)
-    const nextRentDate = new Date(currentYear, currentMonth + 1, 1);
-    const daysUntilRent = Math.ceil((nextRentDate - today) / (1000 * 60 * 60 * 24));
-    
-    // Determine rent status
-    const getRentStatus = () => {
-      if (currentUser.balance === 0) {
-        return {
-          status: 'paid',
-          message: 'Fully Paid',
-          description: 'Your rent is up to date',
-          color: 'text-green-600',
-          bgColor: 'bg-green-50',
-          borderColor: 'border-green-200'
-        };
-      } else if (daysUntilRent > 0) {
-        return {
-          status: 'upcoming',
-          message: `Due in ${daysUntilRent} days`,
-          description: `Rent of KSh ${currentUser.balance.toLocaleString()} is due on ${nextRentDate.toDateString()}`,
-          color: 'text-orange-600',
-          bgColor: 'bg-orange-50',
-          borderColor: 'border-orange-200'
-        };
-      } else {
-        const daysOverdue = Math.abs(daysUntilRent);
-        return {
-          status: 'overdue',
-          message: daysOverdue === 0 ? 'Due Today' : `${daysOverdue} days overdue`,
-          description: `Outstanding balance: KSh ${currentUser.balance.toLocaleString()}`,
-          color: 'text-red-600',
-          bgColor: 'bg-red-50',
-          borderColor: 'border-red-200'
-        };
-      }
-    };
-
-    const rentStatus = getRentStatus();
-
-    return (
-      <div className="p-6">
-        {/* Welcome Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-800 mb-2">Welcome back, {currentUser.name}!</h1>
-          <p className="text-gray-600">Here's your rental overview</p>
-        </div>
-
-        {/* Property Information Card */}
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Property Details</h2>
-          <div className="space-y-3">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Apartment</span>
-              <span className="font-medium text-gray-800">Greenview Heights</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Unit Number</span>
-              <span className="font-medium text-gray-800">{currentUser.unit}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Tenant</span>
-              <span className="font-medium text-gray-800">{currentUser.name}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-600">Monthly Rent</span>
-              <span className="font-medium text-gray-800">KSh {currentUser.monthlyRent.toLocaleString()}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Rent Status Card */}
-        <div className={`rounded-lg border p-6 mb-6 ${rentStatus.bgColor} ${rentStatus.borderColor}`}>
-          <div className="flex items-start justify-between mb-4">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-800">Rent Status</h3>
-              <p className={`text-sm ${rentStatus.color}`}>{rentStatus.description}</p>
-            </div>
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${rentStatus.color} ${rentStatus.bgColor} border ${rentStatus.borderColor}`}>
-              {rentStatus.message}
-            </span>
-          </div>
-          
-          {currentUser.balance > 0 && (
-            <div className="mt-4">
-              <button
-                onClick={() => setCurrentPage('payment')}
-                className="bg-green-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-green-700"
-              >
-                Pay Now
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Quick Actions */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-800">Quick Actions</h3>
-          
-          <div className="grid grid-cols-1 gap-4">
-            <button
-              onClick={() => setCurrentPage('payment')}
-              className="bg-white border rounded-lg p-4 text-left hover:bg-gray-50 transition-colors"
-            >
-              <h4 className="font-medium text-gray-800 mb-1">Make Payment</h4>
-              <p className="text-sm text-gray-600">Pay your rent via M-Pesa</p>
-            </button>
-            
-            <button
-              onClick={() => setCurrentPage('history')}
-              className="bg-white border rounded-lg p-4 text-left hover:bg-gray-50 transition-colors"
-            >
-              <h4 className="font-medium text-gray-800 mb-1">Payment History</h4>
-              <p className="text-sm text-gray-600">View your payment records and receipts</p>
-            </button>
-          </div>
-        </div>
-
-        {/* Recent Payments Preview */}
-        {currentUser.payments.length > 0 && (
-          <div className="mt-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-800">Recent Payments</h3>
-              <button
-                onClick={() => setCurrentPage('history')}
-                className="text-blue-600 text-sm font-medium hover:text-blue-700"
-              >
-                View All
-              </button>
-            </div>
-            
-            <div className="bg-white border rounded-lg divide-y divide-gray-200">
-              {currentUser.payments.slice(-3).reverse().map((payment) => (
-                <div key={payment.id} className="p-4 flex justify-between items-center">
-                  <div>
-                    <p className="font-medium text-gray-800">KSh {payment.amount.toLocaleString()}</p>
-                    <p className="text-sm text-gray-600">{payment.date}</p>
-                  </div>
-                  <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
-                    {payment.status}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // Payment Page Component
-  const PaymentPage = () => {
-    const [amount, setAmount] = useState(currentUser.balance || currentUser.monthlyRent);
-    const [phoneNumber, setPhoneNumber] = useState(currentUser.phone);
-    const [paymentStatus, setPaymentStatus] = useState('');
-
-    const handlePayment = async () => {
-      setLoading(true);
-      setPaymentStatus('processing');
-      
-      try {
-        // Initiate STK Push
-        const stkResponse = await initiateSTKPush(phoneNumber, amount, `RENT_${currentUser.unit}`);
-        
-        if (stkResponse.success) {
-          // Simulate successful payment after STK Push
-          setTimeout(async () => {
-            const newPayment = {
-              id: Date.now(),
-              amount: amount,
-              date: new Date().toISOString().split('T')[0],
-              status: 'paid',
-              method: 'M-Pesa',
-              transactionId: `TXN${Date.now()}`
-            };
-
-            // Update tenant data
-            const updatedUser = {
-              ...currentUser,
-              balance: Math.max(0, currentUser.balance - amount),
-              payments: [...currentUser.payments, newPayment]
-            };
-
-            setCurrentUser(updatedUser);
-            
-            // Update tenants array
-            setTenants(prev => prev.map(t => t.id === currentUser.id ? updatedUser : t));
-
-            // Update Excel sheet
-            await updateExcelSheet({
-              tenant: currentUser.name,
-              unit: currentUser.unit,
-              amount: amount,
-              date: newPayment.date,
-              transactionId: newPayment.transactionId
-            });
-
-            setPaymentStatus('success');
-            setLoading(false);
-          }, 3000);
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BizFinance: Cambridge IGCSE Study Guide</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
-      } catch (error) {
-        setPaymentStatus('error');
-        setLoading(false);
-      }
-    };
-
-    return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800">Pay Rent</h1>
         
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-gray-700">Tenant Details</h2>
-            <p className="text-gray-600">Name: {currentUser.name}</p>
-            <p className="text-gray-600">Unit: {currentUser.unit}</p>
-            <p className="text-gray-600">Monthly Rent: KSh {currentUser.monthlyRent.toLocaleString()}</p>
-            <p className="text-red-600 font-semibold">Outstanding Balance: KSh {currentUser.balance.toLocaleString()}</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border p-6">
-          <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Phone Number
-            </label>
-            <input
-              type="tel"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-              placeholder="254712345678"
-            />
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Amount (KSh)
-            </label>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(Number(e.target.value))}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
-              min="0"
-            />
-          </div>
-
-          {paymentStatus === 'processing' && (
-            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-blue-800">Processing payment... Please complete the transaction on your phone.</p>
-            </div>
-          )}
-
-          {paymentStatus === 'success' && (
-            <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-green-800">Payment successful! Your balance has been updated.</p>
-            </div>
-          )}
-
-          {paymentStatus === 'error' && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
-              <p className="text-red-800">Payment failed. Please try again.</p>
-            </div>
-          )}
-
-          <button
-            onClick={handlePayment}
-            disabled={loading}
-            className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loading ? 'Processing...' : 'Pay via M-Pesa'}
-          </button>
-        </div>
-      </div>
-    );
-  };
-
-  // Tenant History Page Component
-  const TenantHistoryPage = () => {
-    return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-6 text-gray-800">Payment History</h1>
+        body {
+            background-color: #f5f7fa;
+            color: #333;
+            line-height: 1.6;
+        }
         
-        <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
-          <div className="grid grid-cols-2 gap-4">
+        .app-container {
+            max-width: 480px;
+            margin: 0 auto;
+            background-color: white;
+            min-height: 100vh;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background-color: #2c3e50;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+        
+        .progress-container {
+            background-color: #34495e;
+            border-radius: 10px;
+            height: 8px;
+            width: 120px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            background-color: #3498db;
+            height: 100%;
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+        
+        .progress-text {
+            font-size: 0.8rem;
+            margin-top: 5px;
+        }
+        
+        .content {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+        
+        .module-title {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 12px 0;
+            text-align: center;
+            cursor: pointer;
+            font-weight: 500;
+            color: #7f8c8d;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            color: #3498db;
+            border-bottom: 3px solid #3498db;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .concept-card {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .concept-card h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+        
+        .concept-card p {
+            font-size: 0.95rem;
+            color: #555;
+        }
+        
+        .example-box {
+            background-color: #e8f4fc;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .example-box h3 {
+            color: #2980b9;
+            margin-bottom: 10px;
+        }
+        
+        .calculation-box {
+            background-color: #f0f7e6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .calculation-box h3 {
+            color: #27ae60;
+            margin-bottom: 10px;
+        }
+        
+        .formula {
+            background-color: #e8f8f5;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            margin: 10px 0;
+            text-align: center;
+        }
+        
+        .quiz-container {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .question {
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        
+        .blank {
+            display: inline-block;
+            width: 100px;
+            border-bottom: 2px solid #3498db;
+            margin: 0 5px;
+            text-align: center;
+            color: #3498db;
+            font-weight: bold;
+        }
+        
+        .answer-input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+            margin-bottom: 15px;
+        }
+        
+        .options {
+            margin-bottom: 20px;
+        }
+        
+        .option {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .option:hover {
+            background-color: #f0f0f0;
+        }
+        
+        .option input {
+            margin-right: 10px;
+        }
+        
+        .btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: background-color 0.3s;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            background-color: #2980b9;
+        }
+        
+        .btn-secondary {
+            background-color: #95a5a6;
+        }
+        
+        .btn-secondary:hover {
+            background-color: #7f8c8d;
+        }
+        
+        .btn-large {
+            padding: 15px 20px;
+            font-size: 1.1rem;
+            margin-top: 20px;
+        }
+        
+        .feedback {
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .feedback.correct {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .feedback.incorrect {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .outcomes-list {
+            list-style-type: none;
+        }
+        
+        .outcomes-list li {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .outcomes-list li:before {
+            content: "\f00c";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            margin-right: 10px;
+            color: #27ae60;
+        }
+        
+        .footer {
+            background-color: #ecf0f1;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 1px solid #ddd;
+        }
+        
+        .xp-container {
+            display: flex;
+            align-items: center;
+            background-color: #f1c40f;
+            color: #333;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .xp-container i {
+            margin-right: 5px;
+        }
+        
+        .nav-buttons {
+            display: flex;
+        }
+        
+        .nav-btn {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background-color 0.3s;
+        }
+        
+        .nav-btn:hover {
+            background-color: #2980b9;
+        }
+        
+        .nav-btn:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        
+        .back-to-concepts {
+            display: none;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        
+        .back-to-concepts:hover {
+            background-color: #2980b9;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .view {
+            display: none;
+        }
+        
+        .view.active {
+            display: block;
+        }
+        
+        .module-card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 15px;
+            margin-bottom: 20px;
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .module-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+        }
+        
+        .module-card.disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .module-card.disabled:hover {
+            transform: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .module-card h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .module-card p {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+            margin-bottom: 10px;
+        }
+        
+        .module-progress {
+            display: flex;
+            align-items: center;
+        }
+        
+        .module-progress-bar {
+            flex: 1;
+            height: 8px;
+            background-color: #ecf0f1;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-right: 10px;
+        }
+        
+        .module-progress-fill {
+            height: 100%;
+            background-color: #3498db;
+        }
+        
+        .module-progress-text {
+            font-size: 0.8rem;
+            color: #7f8c8d;
+        }
+        
+        /* Introduction Page Styles */
+        .intro-container {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .intro-logo {
+            width: 120px;
+            height: 120px;
+            background-color: #3498db;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 30px;
+            color: white;
+            font-size: 3rem;
+        }
+        
+        .intro-title {
+            font-size: 2rem;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .intro-subtitle {
+            font-size: 1.2rem;
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+        
+        .intro-section {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 30px;
+            text-align: left;
+        }
+        
+        .intro-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            text-align: center;
+            font-size: 1.3rem;
+        }
+        
+        .intro-section p {
+            margin-bottom: 15px;
+            color: #555;
+        }
+        
+        .intro-section ul {
+            margin-left: 20px;
+            margin-bottom: 15px;
+        }
+        
+        .intro-section li {
+            margin-bottom: 8px;
+            color: #555;
+        }
+        
+        .course-outline {
+            margin-bottom: 30px;
+        }
+        
+        .outline-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .outline-icon {
+            width: 40px;
+            height: 40px;
+            background-color: #3498db;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        
+        .outline-text {
+            flex: 1;
+            text-align: left;
+        }
+        
+        .outline-text h4 {
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .outline-text p {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        
+        .outcomes-heading {
+            color: #2c3e50;
+            font-size: 1.3rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .outcomes-list {
+            list-style-type: none;
+            margin-bottom: 30px;
+        }
+        
+        .outcomes-list li {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #3498db;
+            text-align: left;
+        }
+        
+        .outcomes-list li:before {
+            content: "\f00c";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            margin-right: 10px;
+            color: #27ae60;
+        }
+        
+        .completion-message {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .completion-message h3 {
+            margin-bottom: 10px;
+        }
+        
+        .module-complete {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .module-complete h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        .module-complete p {
+            color: #555;
+            margin-bottom: 20px;
+        }
+        
+        .module-complete-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .module-complete-buttons .btn {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
             <div>
-              <h3 className="text-sm font-medium text-gray-500">Current Balance</h3>
-              <p className="text-2xl font-bold text-red-600">KSh {currentUser.balance.toLocaleString()}</p>
+                <h1>BizFinance: Cambridge IGCSE</h1>
+                <div class="progress-text">Overall Progress: <span id="progress-percent">0%</span></div>
             </div>
-            <div>
-              <h3 className="text-sm font-medium text-gray-500">Monthly Rent</h3>
-              <p className="text-2xl font-bold text-gray-800">KSh {currentUser.monthlyRent.toLocaleString()}</p>
+            <div class="progress-container">
+                <div class="progress-bar" id="main-progress-bar"></div>
             </div>
-          </div>
         </div>
-
-        <div className="bg-white rounded-lg shadow-sm border">
-          <div className="p-6 border-b">
-            <h2 className="text-lg font-semibold text-gray-700">Payment History</h2>
-          </div>
-          
-          <div className="divide-y divide-gray-200">
-            {currentUser.payments.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">
-                No payments recorded yet.
-              </div>
-            ) : (
-              currentUser.payments.map((payment) => (
-                <div key={payment.id} className="p-6 hover:bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="font-medium text-gray-800">KSh {payment.amount.toLocaleString()}</p>
-                      <p className="text-sm text-gray-600">{payment.date}</p>
-                      <p className="text-sm text-gray-500">{payment.method}</p>
+        
+        <div class="content">
+            <!-- Introduction View -->
+            <div id="intro-view" class="view active">
+                <div class="intro-container">
+                    <div class="intro-logo">
+                        <i class="fas fa-chart-line"></i>
                     </div>
-                    <span className="px-3 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                      {payment.status}
-                    </span>
-                  </div>
+                    <h2 class="intro-title">BizFinance</h2>
+                    <p class="intro-subtitle">Cambridge IGCSE Business Study Guide</p>
+                    
+                    <div class="intro-section">
+                        <h3>About This App</h3>
+                        <p>BizFinance is a comprehensive learning application designed specifically for Year 11 students preparing for the Cambridge International Examination in Business Studies. Our interactive platform covers all essential finance concepts through engaging content, practical examples, and knowledge checks.</p>
+                        <p>Features include:</p>
+                        <ul>
+                            <li>Interactive learning modules with clear explanations</li>
+                            <li>Real-world business examples and case studies</li>
+                            <li>Practice calculations with step-by-step guidance</li>
+                            <li>Knowledge checks with instant feedback</li>
+                            <li>Progress tracking and achievement system</li>
+                        </ul>
+                    </div>
+                    
+                    <h3 class="outcomes-heading">Course Outline</h3>
+                    <div class="course-outline">
+                        <div class="outline-item">
+                            <div class="outline-icon">1</div>
+                            <div class="outline-text">
+                                <h4>Financial Sources & Cash Flow</h4>
+                                <p>Short-term vs long-term finance, internal vs external sources</p>
+                            </div>
+                        </div>
+                        
+                        <div class="outline-item">
+                            <div class="outline-icon">2</div>
+                            <div class="outline-text">
+                                <h4>Costs & Revenue Analysis</h4>
+                                <p>Fixed vs variable costs, break-even analysis</p>
+                            </div>
+                        </div>
+                        
+                        <div class="outline-item">
+                            <div class="outline-icon">3</div>
+                            <div class="outline-text">
+                                <h4>Financial Planning & Budgeting</h4>
+                                <p>Budget preparation, variance analysis</p>
+                            </div>
+                        </div>
+                        
+                        <div class="outline-item">
+                            <div class="outline-icon">4</div>
+                            <div class="outline-text">
+                                <h4>Financial Statements</h4>
+                                <p>Income statements, balance sheets, ratio analysis</p>
+                            </div>
+                        </div>
+                        
+                        <div class="outline-item">
+                            <div class="outline-icon">5</div>
+                            <div class="outline-text">
+                                <h4>Investment Decisions</h4>
+                                <p>Investment appraisal, payback period, NPV</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h3 class="outcomes-heading">By the end of this course, you will be able to:</h3>
+                    <ul class="outcomes-list">
+                        <li>Understand and apply key financial concepts in business contexts</li>
+                        <li>Analyze different sources of finance and their suitability for various business needs</li>
+                        <li>Interpret financial statements and calculate key ratios</li>
+                        <li>Perform break-even analysis and make pricing decisions</li>
+                        <li>Evaluate investment opportunities using appropriate financial techniques</li>
+                        <li>Prepare cash flow forecasts and identify potential cash flow problems</li>
+                        <li>Apply financial knowledge to solve business problems and make informed decisions</li>
+                    </ul>
+                    
+                    <button class="btn btn-large" onclick="showView('home-view')">Start Learning</button>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Landlord Information Page Component
-  const LandlordInfoPage = () => {
-    const totalRent = tenants.reduce((sum, tenant) => sum + tenant.monthlyRent, 0);
-    const totalOutstanding = tenants.reduce((sum, tenant) => sum + tenant.balance, 0);
-    const overdueTenants = tenants.filter(tenant => tenant.balance > 0);
-
-    const generateReport = () => {
-      const reportData = {
-        totalTenants: tenants.length,
-        totalMonthlyRent: totalRent,
-        totalOutstanding: totalOutstanding,
-        collectionRate: ((totalRent - totalOutstanding) / totalRent * 100).toFixed(1),
-        tenants: tenants.map(tenant => ({
-          name: tenant.name,
-          unit: tenant.unit,
-          monthlyRent: tenant.monthlyRent,
-          balance: tenant.balance,
-          lastPayment: tenant.payments[tenant.payments.length - 1]?.date || 'Never'
-        }))
-      };
-      
-      console.log('Generated Report:', reportData);
-      alert('Report generated! Check console for details.');
-    };
-
-    return (
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-800">Landlord Dashboard</h1>
-          <button
-            onClick={generateReport}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700"
-          >
-            Generate Report
-          </button>
-        </div>
-
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Total Monthly Rent</h3>
-            <p className="text-2xl font-bold text-green-600">KSh {totalRent.toLocaleString()}</p>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Outstanding Balance</h3>
-            <p className="text-2xl font-bold text-red-600">KSh {totalOutstanding.toLocaleString()}</p>
-          </div>
-          
-          <div className="bg-white rounded-lg shadow-sm border p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">Collection Rate</h3>
-            <p className="text-2xl font-bold text-blue-600">
-              {((totalRent - totalOutstanding) / totalRent * 100).toFixed(1)}%
-            </p>
-          </div>
-        </div>
-
-        {/* Overdue Payments Alert */}
-        {overdueTenants.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-            <h3 className="font-medium text-red-800 mb-2">Overdue Payments ({overdueTenants.length})</h3>
-            <div className="space-y-1">
-              {overdueTenants.map(tenant => (
-                <p key={tenant.id} className="text-sm text-red-700">
-                  {tenant.name} (Unit {tenant.unit}) - KSh {tenant.balance.toLocaleString()}
-                </p>
-              ))}
             </div>
-          </div>
-        )}
-
-        {/* Tenants List */}
-        <div className="bg-white rounded-lg shadow-sm border">
-          <div className="p-6 border-b">
-            <h2 className="text-lg font-semibold text-gray-700">All Tenants</h2>
-          </div>
-          
-          <div className="divide-y divide-gray-200">
-            {tenants.map((tenant) => (
-              <div key={tenant.id} className="p-6 hover:bg-gray-50">
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h3 className="font-medium text-gray-800">{tenant.name}</h3>
-                    <p className="text-sm text-gray-600">Unit {tenant.unit}</p>
-                    <p className="text-sm text-gray-600">Monthly Rent: KSh {tenant.monthlyRent.toLocaleString()}</p>
-                    <p className="text-sm text-gray-600">
-                      Last Payment: {tenant.payments[tenant.payments.length - 1]?.date || 'Never'}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-medium ${tenant.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {tenant.balance > 0 ? `KSh ${tenant.balance.toLocaleString()} due` : 'Paid up'}
-                    </p>
-                    <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-                      tenant.balance === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {tenant.balance === 0 ? 'Current' : 'Overdue'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // Navigation Component
-  const Navigation = () => (
-    <nav className="bg-white shadow-sm border-b">
-      <div className="flex items-center justify-between p-4">
-        <h1 className="text-xl font-bold text-gray-800">RentPay Kenya</h1>
-        
-        <button
-          onClick={() => setMenuOpen(!menuOpen)}
-          className="p-2 hover:bg-gray-100 rounded-lg"
-        >
-          <div className="w-6 h-6 flex flex-col justify-center space-y-1">
-            <div className="w-6 h-0.5 bg-gray-600"></div>
-            <div className="w-6 h-0.5 bg-gray-600"></div>
-            <div className="w-6 h-0.5 bg-gray-600"></div>
-          </div>
-        </button>
-      </div>
-      
-      {menuOpen && (
-        <div className="border-t bg-white">
-          <div className="p-2 space-y-1">
-            <div className="px-3 py-2 text-sm font-medium text-gray-500">Role</div>
-            <button
-              onClick={() => {
-                setUserRole(userRole === 'tenant' ? 'landlord' : 'tenant');
-                setCurrentPage(userRole === 'tenant' ? 'landlord' : 'home');
-                setMenuOpen(false);
-              }}
-              className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded"
-            >
-              Switch to {userRole === 'tenant' ? 'Landlord' : 'Tenant'} View
-            </button>
             
-            <div className="border-t pt-2 mt-2">
-              {userRole === 'tenant' ? (
-                <>
-                  <button
-                    onClick={() => { setCurrentPage('home'); setMenuOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
-                      currentPage === 'home' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
-                    }`}
-                  >
-                    Home
-                  </button>
-                  <button
-                    onClick={() => { setCurrentPage('payment'); setMenuOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
-                      currentPage === 'payment' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
-                    }`}
-                  >
-                    Pay Rent
-                  </button>
-                  <button
-                    onClick={() => { setCurrentPage('history'); setMenuOpen(false); }}
-                    className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
-                      currentPage === 'history' ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
-                    }`}
-                  >
-                    Payment History
-                  </button>
-                </>
-              ) : (
-                <button
-                  onClick={() => { setCurrentPage('landlord'); setMenuOpen(false); }}
-                  className={`w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-50 ${
-                    currentPage === 'landlord' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-                  }`}
-                >
-                  Dashboard
-                </button>
-              )}
+            <!-- Home View -->
+            <div id="home-view" class="view">
+                <h2 class="module-title">Business Finance Modules</h2>
+                
+                <div class="module-card" id="module1-card" onclick="loadModule(1)">
+                    <h3>Module 1: Financial Sources & Cash Flow</h3>
+                    <p>Short-term vs long-term finance, internal vs external sources, cash flow management</p>
+                    <div class="module-progress">
+                        <div class="module-progress-bar">
+                            <div class="module-progress-fill" id="module1-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="module-progress-text" id="module1-progress-text">0%</div>
+                    </div>
+                </div>
+                
+                <div class="module-card disabled" id="module2-card" onclick="loadModule(2)">
+                    <h3>Module 2: Costs & Revenue Analysis</h3>
+                    <p>Fixed vs variable costs, revenue calculations, break-even analysis</p>
+                    <div class="module-progress">
+                        <div class="module-progress-bar">
+                            <div class="module-progress-fill" id="module2-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="module-progress-text" id="module2-progress-text">0%</div>
+                    </div>
+                </div>
+                
+                <div class="module-card disabled" id="module3-card" onclick="loadModule(3)">
+                    <h3>Module 3: Financial Planning & Budgeting</h3>
+                    <p>Budget preparation, types of budgets, variance analysis</p>
+                    <div class="module-progress">
+                        <div class="module-progress-bar">
+                            <div class="module-progress-fill" id="module3-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="module-progress-text" id="module3-progress-text">0%</div>
+                    </div>
+                </div>
+                
+                <div class="module-card disabled" id="module4-card" onclick="loadModule(4)">
+                    <h3>Module 4: Financial Statements</h3>
+                    <p>Income statements, balance sheets, cash flow statements, ratio analysis</p>
+                    <div class="module-progress">
+                        <div class="module-progress-bar">
+                            <div class="module-progress-fill" id="module4-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="module-progress-text" id="module4-progress-text">0%</div>
+                    </div>
+                </div>
+                
+                <div class="module-card disabled" id="module5-card" onclick="loadModule(5)">
+                    <h3>Module 5: Investment Decisions</h3>
+                    <p>Investment appraisal methods, payback period, NPV, risk analysis</p>
+                    <div class="module-progress">
+                        <div class="module-progress-bar">
+                            <div class="module-progress-fill" id="module5-progress" style="width: 0%"></div>
+                        </div>
+                        <div class="module-progress-text" id="module5-progress-text">0%</div>
+                    </div>
+                </div>
             </div>
-          </div>
+            
+            <!-- Learning View -->
+            <div id="learning-view" class="view">
+                <h2 class="module-title" id="learning-module-title">Financial Sources & Cash Flow</h2>
+                
+                <div class="tabs">
+                    <div class="tab active" onclick="openTab(event, 'concepts')">Concepts</div>
+                    <div class="tab" onclick="openTab(event, 'examples')">Examples</div>
+                    <div class="tab" onclick="openTab(event, 'calculations')">Calculations</div>
+                </div>
+                
+                <div id="concepts" class="tab-content active">
+                    <div class="concept-card">
+                        <h3>Types of Finance</h3>
+                        <p>Businesses require finance for various purposes including starting up, expansion, and day-to-day operations. Finance can be categorized as:</p>
+                        <ul style="margin-left: 20px; margin-top: 10px;">
+                            <li><strong>Short-term finance:</strong> Needed for daily operations, usually repaid within a year</li>
+                            <li><strong>Long-term finance:</strong> Used for major investments, repaid over more than a year</li>
+                            <li><strong>Internal finance:</strong> Generated from within the business (retained profits, sale of assets)</li>
+                            <li><strong>External finance:</strong> Obtained from outside sources (loans, share capital)</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="concept-card">
+                        <h3>Cash Flow Management</h3>
+                        <p>Cash flow refers to the movement of money into and out of a business. Effective cash flow management ensures that a business has enough cash to meet its obligations. Poor cash flow management is a major reason for business failure.</p>
+                    </div>
+                    
+                    <div class="concept-card">
+                        <h3>Importance of Cash Flow Forecasts</h3>
+                        <p>Cash flow forecasts predict future cash inflows and outflows. They help businesses:</p>
+                        <ul style="margin-left: 20px; margin-top: 10px;">
+                            <li>Identify potential cash shortages</li>
+                            <li>Plan for surplus cash</li>
+                            <li>Secure financing in advance</li>
+                            <li>Improve decision-making</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div id="examples" class="tab-content">
+                    <div class="example-box">
+                        <h3>Short-term Finance Example</h3>
+                        <p>A retail business needs additional finance to purchase inventory for the upcoming holiday season. They decide to use a bank overdraft facility, which allows them to withdraw more money than they have in their account. This is a form of short-term finance that will be repaid within 6 months when holiday sales generate cash.</p>
+                    </div>
+                    
+                    <div class="example-box">
+                        <h3>Internal Finance Example</h3>
+                        <p>A manufacturing company has been profitable for the past three years and has accumulated £150,000 in retained profits. The management decides to use this internal finance to purchase new machinery instead of taking out a loan. This avoids interest payments and gives the company more financial flexibility.</p>
+                    </div>
+                    
+                    <div class="example-box">
+                        <h3>Cash Flow Problem Example</h3>
+                        <p>A construction company completes a large project but has to wait 90 days for payment from the client. Meanwhile, they need to pay their suppliers and employees within 30 days. This timing difference creates a cash flow problem where the company has profitable projects on paper but struggles to meet short-term obligations.</p>
+                    </div>
+                </div>
+                
+                <div id="calculations" class="tab-content">
+                    <div class="calculation-box">
+                        <h3>Cash Flow Forecast Calculation</h3>
+                        <p>A cash flow forecast calculates the net cash flow for each period:</p>
+                        <div class="formula">
+                            Net Cash Flow = Total Cash Inflows - Total Cash Outflows
+                        </div>
+                        <p>The closing cash balance is then calculated as:</p>
+                        <div class="formula">
+                            Closing Balance = Opening Balance + Net Cash Flow
+                        </div>
+                    </div>
+                    
+                    <div class="calculation-box">
+                        <h3>Example Calculation</h3>
+                        <p>For the month of January:</p>
+                        <ul style="margin-left: 20px; margin-top: 10px;">
+                            <li>Opening Balance: £5,000</li>
+                            <li>Cash Inflows (Sales): £12,000</li>
+                            <li>Cash Outflows (Expenses): £9,500</li>
+                        </ul>
+                        <p>Net Cash Flow = £12,000 - £9,500 = £2,500</p>
+                        <p>Closing Balance = £5,000 + £2,500 = £7,500</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Quiz View -->
+            <div id="quiz-view" class="view">
+                <h2 class="module-title" id="quiz-module-title">Knowledge Check</h2>
+                
+                <div class="completion-message" id="completion-message" style="display: none;">
+                    <h3><i class="fas fa-check-circle"></i> Module Completed!</h3>
+                    <p>Congratulations! You've completed <span id="completed-module-name">Module 1</span></p>
+                </div>
+                
+                <div class="quiz-container">
+                    <div class="question">
+                        Businesses need both <span class="blank" id="blank1">_______</span> and long-term finance to operate effectively.
+                    </div>
+                    
+                    <input type="text" class="answer-input" id="answer-input" placeholder="Type your answer here">
+                    
+                    <button class="btn" onclick="checkAnswer()">Submit Answer</button>
+                    
+                    <div class="feedback" id="feedback">
+                        <p id="feedback-text"></p>
+                    </div>
+                </div>
+                
+                <div class="quiz-container">
+                    <div class="question">
+                        Which of the following are examples of internal sources of finance? (Select all that apply)
+                    </div>
+                    
+                    <div class="options">
+                        <div class="option">
+                            <input type="checkbox" id="option1">
+                            <label for="option1">Bank loans</label>
+                        </div>
+                        <div class="option">
+                            <input type="checkbox" id="option2">
+                            <label for="option2">Retained profits</label>
+                        </div>
+                        <div class="option">
+                            <input type="checkbox" id="option3">
+                            <label for="option3">Sale of assets</label>
+                        </div>
+                        <div class="option">
+                            <input type="checkbox" id="option4">
+                            <label for="option4">Issuing shares</label>
+                        </div>
+                    </div>
+                    
+                    <button class="btn" onclick="checkMultipleChoice()">Submit Answer</button>
+                    
+                    <div class="feedback" id="feedback-mc">
+                        <p id="feedback-text-mc"></p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Outcomes View -->
+            <div id="outcomes-view" class="view">
+                <h2 class="module-title" id="outcomes-module-title">Learning Outcomes</h2>
+                
+                <p style="margin-bottom: 20px; color: #7f8c8d;">After completing this module, you will be able to:</p>
+                
+                <ul class="outcomes-list" id="module-outcomes">
+                    <li>Define different sources of finance for businesses</li>
+                    <li>Distinguish between short-term and long-term finance</li>
+                    <li>Explain the importance of cash flow management</li>
+                    <li>Prepare a simple cash flow forecast</li>
+                    <li>Identify potential cash flow problems and solutions</li>
+                    <li>Analyze the advantages and disadvantages of different finance sources</li>
+                </ul>
+                
+                <button class="btn" style="margin-top: 30px;" onclick="showView('learning-view')">Start Learning</button>
+            </div>
+            
+            <!-- Module Complete View -->
+            <div id="module-complete-view" class="view">
+                <div class="module-complete">
+                    <h3><i class="fas fa-trophy" style="color: #f1c40f;"></i> Module Completed!</h3>
+                    <p>Congratulations! You've successfully completed <span id="completed-module-name-2">Module 1</span>.</p>
+                    <p>Would you like to continue to the next module?</p>
+                    
+                    <div class="module-complete-buttons">
+                        <button class="btn" onclick="continueToNextModule()">Continue to Next Module</button>
+                        <button class="btn btn-secondary" onclick="showView('home-view')">Back to Modules</button>
+                    </div>
+                </div>
+            </div>
         </div>
-      )}
-    </nav>
-  );
-
-  // Main App Render
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <Navigation />
-      
-      <main className="pb-16">
-        {currentPage === 'home' && <HomePage />}
-        {currentPage === 'payment' && <PaymentPage />}
-        {currentPage === 'history' && <TenantHistoryPage />}
-        {currentPage === 'landlord' && <LandlordInfoPage />}
-      </main>
+        
+        <div class="footer">
+            <div class="xp-container">
+                <i class="fas fa-coins"></i>
+                <span id="xp-value">0 XP</span>
+            </div>
+            
+            <div class="nav-buttons" id="nav-buttons">
+                <button class="nav-btn" id="prev-btn" onclick="navigatePrev()" disabled>Previous</button>
+                <button class="nav-btn" id="next-btn" onclick="navigateNext()">Next</button>
+            </div>
+            
+            <button class="back-to-concepts" id="back-to-concepts" onclick="backToConcepts()">
+                <i class="fas fa-arrow-left"></i> Back to Concepts
+            </button>
+        </div>
     </div>
-  );
-};
 
-export default App;
+    <script>
+        // Module data
+        const modules = {
+            1: {
+                title: "Financial Sources & Cash Flow",
+                description: "Short-term vs long-term finance, internal vs external sources, cash flow management",
+                outcomes: [
+                    "Define different sources of finance for businesses",
+                    "Distinguish between short-term and long-term finance",
+                    "Explain the importance of cash flow management",
+                    "Prepare a simple cash flow forecast",
+                    "Identify potential cash flow problems and solutions",
+                    "Analyze the advantages and disadvantages of different finance sources"
+                ],
+                completed: false,
+                progress: 0
+            },
+            2: {
+                title: "Costs & Revenue Analysis",
+                description: "Fixed vs variable costs, revenue calculations, break-even analysis",
+                outcomes: [
+                    "Distinguish between fixed and variable costs",
+                    "Calculate total costs and revenue",
+                    "Perform break-even analysis",
+                    "Interpret break-even charts",
+                    "Analyze the impact of costs and revenue on business decisions"
+                ],
+                completed: false,
+                progress: 0
+            },
+            3: {
+                title: "Financial Planning & Budgeting",
+                description: "Budget preparation, types of budgets, variance analysis",
+                outcomes: [
+                    "Explain the purpose of budgets",
+                    "Prepare different types of budgets",
+                    "Calculate and interpret variances",
+                    "Analyze the causes of variances",
+                    "Recommend corrective actions for adverse variances"
+                ],
+                completed: false,
+                progress: 0
+            },
+            4: {
+                title: "Financial Statements",
+                description: "Income statements, balance sheets, cash flow statements, ratio analysis",
+                outcomes: [
+                    "Prepare simple income statements and balance sheets",
+                    "Calculate key profitability and liquidity ratios",
+                    "Interpret financial statements",
+                    "Analyze business performance using ratios",
+                    "Evaluate the financial health of a business"
+                ],
+                completed: false,
+                progress: 0
+            },
+            5: {
+                title: "Investment Decisions",
+                description: "Investment appraisal methods, payback period, NPV, risk analysis",
+                outcomes: [
+                    "Explain the importance of investment decisions",
+                    "Calculate payback period and accounting rate of return",
+                    "Calculate net present value (NPV)",
+                    "Evaluate investment projects using different methods",
+                    "Analyze the risks associated with investment decisions"
+                ],
+                completed: false,
+                progress: 0
+            }
+        };
+        
+        // Current view tracking
+        let currentView = 'intro-view';
+        let currentTab = 'concepts';
+        let currentModule = 1;
+        let xp = 0;
+        let overallProgress = 0;
+        let quizCompleted = false;
+        
+        // View navigation
+        function showView(viewId) {
+            // Hide all views
+            document.querySelectorAll('.view').forEach(view => {
+                view.classList.remove('active');
+            });
+            
+            // Show selected view
+            document.getElementById(viewId).classList.add('active');
+            currentView = viewId;
+            
+            // Reset quiz if entering quiz view
+            if (viewId === 'quiz-view') {
+                resetQuiz();
+            }
+            
+            // Show completion message if quiz is completed
+            if (viewId === 'quiz-view' && quizCompleted) {
+                document.getElementById('completion-message').style.display = 'block';
+            } else {
+                document.getElementById('completion-message').style.display = 'none';
+            }
+            
+            // Update navigation buttons
+            updateNavigationButtons();
+        }
+        
+        // Load a specific module
+        function loadModule(moduleNumber) {
+            // Check if module is available (previous module completed or it's module 1)
+            if (moduleNumber > 1 && !modules[moduleNumber - 1].completed) {
+                return; // Don't load if previous module not completed
+            }
+            
+            currentModule = moduleNumber;
+            quizCompleted = false;
+            
+            // Update module title in different views
+            document.getElementById('learning-module-title').textContent = `Module ${moduleNumber}: ${modules[moduleNumber].title}`;
+            document.getElementById('quiz-module-title').textContent = `Module ${moduleNumber}: Knowledge Check`;
+            document.getElementById('outcomes-module-title').textContent = `Module ${moduleNumber}: Learning Outcomes`;
+            document.getElementById('completed-module-name').textContent = `Module ${moduleNumber}: ${modules[moduleNumber].title}`;
+            document.getElementById('completed-module-name-2').textContent = `Module ${moduleNumber}: ${modules[moduleNumber].title}`;
+            
+            // Update outcomes list
+            const outcomesList = document.getElementById('module-outcomes');
+            outcomesList.innerHTML = '';
+            modules[moduleNumber].outcomes.forEach(outcome => {
+                const li = document.createElement('li');
+                li.textContent = outcome;
+                outcomesList.appendChild(li);
+            });
+            
+            // Load module-specific content
+            loadModuleContent(moduleNumber);
+            
+            // Show outcomes view
+            showView('outcomes-view');
+        }
+        
+        // Load module-specific content
+        function loadModuleContent(moduleNumber) {
+            // For now, we'll use the same content for all modules
+            // In a real app, each module would have its own content
+            // This is a placeholder for module-specific content loading
+            console.log(`Loading content for Module ${moduleNumber}`);
+        }
+        
+        // Tab navigation
+        function openTab(evt, tabName) {
+            // Hide all tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show specific tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to the button that opened the tab
+            evt.currentTarget.classList.add('active');
+            
+            currentTab = tabName;
+            
+            // Update navigation buttons based on the new tab
+            updateNavigationButtons();
+        }
+        
+        // Back to concepts function
+        function backToConcepts() {
+            // Switch to concepts tab
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            document.getElementById('concepts').classList.add('active');
+            document.querySelector('.tab').classList.add('active');
+            
+            currentTab = 'concepts';
+            
+            // Update navigation buttons
+            updateNavigationButtons();
+        }
+        
+        // Reset quiz function
+        function resetQuiz() {
+            // Reset fill-in-the-blank
+            document.getElementById('answer-input').value = '';
+            document.getElementById('blank1').textContent = '_______';
+            document.getElementById('blank1').style.color = '#3498db';
+            document.getElementById('feedback').style.display = 'none';
+            
+            // Reset multiple choice
+            document.getElementById('option1').checked = false;
+            document.getElementById('option2').checked = false;
+            document.getElementById('option3').checked = false;
+            document.getElementById('option4').checked = false;
+            document.getElementById('feedback-mc').style.display = 'none';
+        }
+        
+        // Check answer for fill-in-the-blank
+        function checkAnswer() {
+            const answer = document.getElementById('answer-input').value.trim().toLowerCase();
+            const feedback = document.getElementById('feedback');
+            const feedbackText = document.getElementById('feedback-text');
+            const blank = document.getElementById('blank1');
+            
+            if (answer === 'short-term' || answer === 'short term') {
+                feedback.className = 'feedback correct';
+                feedbackText.textContent = 'Correct! Short-term finance is needed for daily operations and is usually repaid within a year.';
+                blank.textContent = 'short-term';
+                blank.style.color = '#27ae60';
+                
+                // Award XP
+                xp += 15;
+                updateXP();
+                
+                // Update module progress
+                modules[currentModule].progress = Math.min(modules[currentModule].progress + 5, 100);
+                updateModuleProgress();
+                
+                // Check if all questions are answered
+                checkQuizCompletion();
+            } else {
+                feedback.className = 'feedback incorrect';
+                feedbackText.textContent = 'Incorrect. The correct answer is "short-term". Try again!';
+            }
+            
+            feedback.style.display = 'block';
+        }
+        
+        // Check multiple choice answer
+        function checkMultipleChoice() {
+            const option1 = document.getElementById('option1').checked;
+            const option2 = document.getElementById('option2').checked;
+            const option3 = document.getElementById('option3').checked;
+            const option4 = document.getElementById('option4').checked;
+            
+            const feedback = document.getElementById('feedback-mc');
+            const feedbackText = document.getElementById('feedback-text-mc');
+            
+            if (!option1 && option2 && option3 && !option4) {
+                feedback.className = 'feedback correct';
+                feedbackText.textContent = 'Correct! Retained profits and sale of assets are internal sources of finance, while bank loans and issuing shares are external sources.';
+                
+                // Award XP
+                xp += 20;
+                updateXP();
+                
+                // Update module progress
+                modules[currentModule].progress = Math.min(modules[currentModule].progress + 8, 100);
+                updateModuleProgress();
+                
+                // Check if all questions are answered
+                checkQuizCompletion();
+            } else {
+                feedback.className = 'feedback incorrect';
+                feedbackText.textContent = 'Incorrect. Internal sources of finance come from within the business. The correct answers are "Retained profits" and "Sale of assets".';
+            }
+            
+            feedback.style.display = 'block';
+        }
+        
+        // Check if quiz is completed
+        function checkQuizCompletion() {
+            // Check if both questions are answered correctly
+            const blankAnswered = document.getElementById('blank1').textContent === 'short-term';
+            const mcAnswered = document.getElementById('feedback-mc').classList.contains('correct');
+            
+            if (blankAnswered && mcAnswered && !quizCompleted) {
+                quizCompleted = true;
+                
+                // Mark module as completed
+                modules[currentModule].completed = true;
+                modules[currentModule].progress = 100;
+                
+                // Update module progress to 100%
+                document.getElementById(`module${currentModule}-progress`).style.width = '100%';
+                document.getElementById(`module${currentModule}-progress-text`).textContent = '100%';
+                
+                // Show completion message
+                document.getElementById('completion-message').style.display = 'block';
+                
+                // Award bonus XP
+                xp += 50;
+                updateXP();
+                
+                // Update overall progress
+                updateOverallProgress();
+                
+                // Enable next module if available
+                if (currentModule < 5) {
+                    document.getElementById(`module${currentModule + 1}-card`).classList.remove('disabled');
+                }
+                
+                // Show module complete view after a delay
+                setTimeout(() => {
+                    showView('module-complete-view');
+                }, 2000);
+            }
+        }
+        
+        // Continue to next module
+        function continueToNextModule() {
+            if (currentModule < 5) {
+                loadModule(currentModule + 1);
+            } else {
+                // All modules completed
+                showView('home-view');
+            }
+        }
+        
+        // Update XP display
+        function updateXP() {
+            document.getElementById('xp-value').textContent = xp + ' XP';
+        }
+        
+        // Update module progress
+        function updateModuleProgress() {
+            document.getElementById(`module${currentModule}-progress`).style.width = modules[currentModule].progress + '%';
+            document.getElementById(`module${currentModule}-progress-text`).textContent = modules[currentModule].progress + '%';
+        }
+        
+        // Update overall progress
+        function updateOverallProgress() {
+            let completedModules = 0;
+            for (let i = 1; i <= 5; i++) {
+                if (modules[i].completed) {
+                    completedModules++;
+                }
+            }
+            
+            overallProgress = Math.round((completedModules / 5) * 100);
+            document.getElementById('progress-percent').textContent = overallProgress + '%';
+            document.getElementById('main-progress-bar').style.width = overallProgress + '%';
+        }
+        
+        // Navigation functions
+        function navigatePrev() {
+            if (currentView === 'home-view') {
+                showView('intro-view');
+            } else if (currentView === 'learning-view') {
+                showView('home-view');
+            } else if (currentView === 'quiz-view') {
+                showView('learning-view');
+            } else if (currentView === 'outcomes-view') {
+                showView('home-view');
+            } else if (currentView === 'module-complete-view') {
+                showView('home-view');
+            }
+        }
+        
+        function navigateNext() {
+            if (currentView === 'intro-view') {
+                showView('home-view');
+            } else if (currentView === 'home-view') {
+                showView('outcomes-view');
+            } else if (currentView === 'outcomes-view') {
+                showView('learning-view');
+            } else if (currentView === 'learning-view') {
+                showView('quiz-view');
+            } else if (currentView === 'quiz-view') {
+                // After quiz, go back to home view
+                showView('home-view');
+            }
+        }
+        
+        // Update navigation buttons based on current view and tab
+        function updateNavigationButtons() {
+            const prevBtn = document.getElementById('prev-btn');
+            const nextBtn = document.getElementById('next-btn');
+            const navButtons = document.getElementById('nav-buttons');
+            const backToConceptsBtn = document.getElementById('back-to-concepts');
+            
+            // Reset buttons
+            prevBtn.disabled = false;
+            nextBtn.disabled = false;
+            
+            // Set button states based on current view
+            if (currentView === 'intro-view') {
+                prevBtn.disabled = true;
+            }
+            
+            // Handle special case for learning view tabs
+            if (currentView === 'learning-view') {
+                if (currentTab === 'examples' || currentTab === 'calculations') {
+                    // Hide navigation buttons and show back to concepts button
+                    navButtons.style.display = 'none';
+                    backToConceptsBtn.style.display = 'block';
+                } else {
+                    // Show navigation buttons and hide back to concepts button
+                    navButtons.style.display = 'flex';
+                    backToConceptsBtn.style.display = 'none';
+                }
+            } else {
+                // For all other views, show navigation buttons and hide back to concepts button
+                navButtons.style.display = 'flex';
+                backToConceptsBtn.style.display = 'none';
+            }
+        }
+        
+        // Initialize the app
+        document.addEventListener('DOMContentLoaded', function() {
+            updateNavigationButtons();
+        });
+    </script>
+</body>
+</html>
